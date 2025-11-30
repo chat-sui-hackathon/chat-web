@@ -358,11 +358,11 @@ export default function ChatRoomPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
       <Header />
-      <main className="max-w-4xl mx-auto w-full px-4 py-4 flex flex-col flex-1">
+      <main className="max-w-4xl mx-auto w-full px-4 py-4 flex flex-col flex-1 min-h-0">
         {/* Header */}
-        <div className="mb-4">
+        <div className="mb-4 flex-shrink-0">
           <Button
             variant="ghost"
             onClick={() => router.push('/rooms')}
@@ -445,8 +445,8 @@ export default function ChatRoomPage() {
         </div>
 
         {/* Messages */}
-        <Card className="flex-1 flex flex-col mb-4">
-          <CardContent ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+        <Card className="flex-1 flex flex-col mb-4 min-h-0 overflow-hidden">
+          <CardContent ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
             {messages.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -458,9 +458,9 @@ export default function ChatRoomPage() {
                   key={`${message.messageIndex}-${index}`}
                   className={`flex ${message.sender === account.address ? 'justify-end' : 'justify-start'}`}
                 >
-                  <div className="relative group">
+                  <div className="relative group max-w-[70%]">
                     <div
-                      className={`max-w-[70%] rounded-lg p-3 ${message.sender === account.address
+                      className={`rounded-lg p-3 ${message.sender === account.address
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted'
                         }`}
@@ -549,8 +549,8 @@ export default function ChatRoomPage() {
         </Card>
 
         {/* Message Input */}
-        <Card>
-          <CardContent className="pt-6">
+        <Card className="flex-shrink-0">
+          <CardContent className="py-4">
             <form
               onSubmit={(e) => {
                 e.preventDefault()
