@@ -1,20 +1,29 @@
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers'
+import { hkdf } from '@noble/hashes/hkdf.js'
+import { sha256 } from '@noble/hashes/sha2.js'
 
 // ============================================
 // Types
 // ============================================
 
 export type Keypair = {
-  publicKey: Uint8Array;  // 32 bytes
-  secretKey: Uint8Array;  // 32 bytes
-};
+  publicKey: Uint8Array  // 32 bytes
+  secretKey: Uint8Array  // 32 bytes
+}
+
+export type ZkLoginClaims = {
+  sub: string      // 用戶在 OAuth provider 的唯一 ID
+  iss: string      // OAuth provider URL (e.g., https://accounts.google.com)
+  aud: string      // 應用的 OAuth client ID
+  userSalt: string // Enoki 為每個用戶產生的 salt
+}
 
 // ============================================
 // Constants
 // ============================================
 
-const SIGN_MESSAGE = "sui-chat:derive-encryption-key:v1";
-const MESSAGE_VERSION = 0x01;
+const SIGN_MESSAGE = "sui-chat:derive-encryption-key:v1"
+const MESSAGE_VERSION = 0x01
 
 // ============================================
 // Initialization
@@ -54,18 +63,63 @@ export function getSignMessage(): string {
  * @returns X25519 keypair
  */
 export async function deriveEncryptionKeypair(signature: Uint8Array): Promise<Keypair> {
-  await sodium.ready;
+  await sodium.ready
 
   // 用 BLAKE2b hash 簽名得到 32 bytes seed
-  const seed = sodium.crypto_generichash(32, signature);
+  const seed = sodium.crypto_generichash(32, signature)
 
   // 從 seed 生成 X25519 keypair
-  const keypair = sodium.crypto_box_seed_keypair(seed);
+  const keypair = sodium.crypto_box_seed_keypair(seed)
 
   return {
     publicKey: keypair.publicKey,
     secretKey: keypair.privateKey,
-  };
+  }
+}
+
+/**
+ * 從 zkLogin JWT claims 衍生加密金鑰對
+ *
+ * 流程：
+ * 1. 用 HKDF 從穩定的 JWT claims 計算 32 bytes seed
+ * 2. 用 seed 生成 X25519 keypair
+ *
+ * 為什麼不用簽名：
+ * zkLogin 的 ephemeral key 每次 session 都不同，簽名結果也不同。
+ * 必須用 JWT 中穩定的 claims 來衍生，才能保證同一用戶每次都得到相同的 keypair。
+ *
+ * 安全性：
+ * - sub + iss + aud 組合對每個用戶在每個 app 是唯一的
+ * - userSalt 由 Enoki 管理，不公開
+ * - 攻擊者需要知道所有四個值才能衍生出相同的 keypair
+ *
+ * @param claims - zkLogin JWT claims
+ * @returns X25519 keypair
+ */
+export async function deriveEncryptionKeypairFromZkLogin(claims: ZkLoginClaims): Promise<Keypair> {
+  await sodium.ready
+
+  const { sub, iss, aud, userSalt } = claims
+
+  // 用 HKDF 從穩定資料衍生 32 bytes seed
+  // IKM (Input Keying Material): userSalt - 每個用戶不同，由 Enoki 管理
+  // salt: iss:aud - 確保不同 app 衍生不同金鑰
+  // info: sub - 用戶的唯一識別碼
+  const seed = hkdf(
+    sha256,
+    new TextEncoder().encode(userSalt),
+    new TextEncoder().encode(`${iss}:${aud}`),
+    new TextEncoder().encode(sub),
+    32
+  )
+
+  // 從 seed 生成 X25519 keypair
+  const keypair = sodium.crypto_box_seed_keypair(seed)
+
+  return {
+    publicKey: keypair.publicKey,
+    secretKey: keypair.privateKey,
+  }
 }
 
 // ============================================
@@ -157,7 +211,7 @@ export function encryptMessage(message: string, key: Uint8Array): string {
   result.set(ciphertext, 1 + nonce.length);
 
   // base64 編碼
-  return sodium.to_base64(result, sodium.base64_variants.STANDARD);
+  return sodium.to_base64(result, sodium.base64_variants.ORIGINAL);
 }
 
 /**
@@ -179,7 +233,7 @@ export function decryptMessage(
 ): string | null {
   try {
     // base64 解碼
-    const data = sodium.from_base64(encryptedMessage, sodium.base64_variants.STANDARD);
+    const data = sodium.from_base64(encryptedMessage, sodium.base64_variants.ORIGINAL);
 
     // 解析 version
     const version = data[0];
@@ -208,12 +262,12 @@ export function decryptMessage(
  * Uint8Array 轉 base64 string
  */
 export function toBase64(data: Uint8Array): string {
-  return sodium.to_base64(data, sodium.base64_variants.STANDARD);
+  return sodium.to_base64(data, sodium.base64_variants.ORIGINAL);
 }
 
 /**
  * base64 string 轉 Uint8Array
  */
 export function fromBase64(base64: string): Uint8Array {
-  return sodium.from_base64(base64, sodium.base64_variants.STANDARD);
+  return sodium.from_base64(base64, sodium.base64_variants.ORIGINAL);
 }

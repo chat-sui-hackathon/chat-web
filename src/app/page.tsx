@@ -1,14 +1,19 @@
-'use client';
+'use client'
 
-import { ConnectButton, useCurrentAccount, useSuiClientQuery } from '@mysten/dapp-kit';
-import { useSignAndExecuteTransaction } from '@mysten/dapp-kit';
-import { Transaction } from '@mysten/sui/transactions';
+import { useCurrentAccount, useSuiClientQuery } from '@mysten/dapp-kit'
+import { useSignAndExecuteTransaction } from '@mysten/dapp-kit'
+import { Transaction } from '@mysten/sui/transactions'
+import { Header } from '@/components/common'
+import { LoginOptions } from '@/components/auth'
+import { useAuthMethod, useSponsoredTransaction } from '@/hooks'
 
 export default function Home() {
-  const account = useCurrentAccount();
-  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
+  const account = useCurrentAccount()
+  const { authMethod, isZkLogin } = useAuthMethod()
+  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction()
+  const { execute: executeSponsoredTx, isPending: isSponsoredPending } = useSponsoredTransaction()
 
-  // Example: Query owned objects for the connected account
+  // Query owned objects for the connected account
   const { data: ownedObjects, isPending, error } = useSuiClientQuery(
     'getOwnedObjects',
     {
@@ -22,119 +27,170 @@ export default function Home() {
     {
       enabled: !!account?.address,
     },
-  );
+  )
 
   const handleTestTransaction = () => {
     if (!account) {
-      alert('Please connect your wallet first');
-      return;
+      alert('Please connect your wallet first')
+      return
     }
 
-    const tx = new Transaction();
-    // Example: Transfer SUI to yourself (a simple test transaction)
-    const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(1000)]);
-    tx.transferObjects([coin], account.address);
+    const tx = new Transaction()
+    const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(1000)])
+    tx.transferObjects([coin], account.address)
 
     signAndExecuteTransaction(
-      {
-        transaction: tx,
-      },
+      { transaction: tx },
       {
         onSuccess: (result) => {
-          console.log('Transaction executed successfully:', result);
-          alert(`Transaction successful! Digest: ${result.digest}`);
+          console.log('Transaction executed successfully:', result)
+          alert(`Transaction successful! Digest: ${result.digest}`)
         },
         onError: (error) => {
-          console.error('Transaction failed:', error);
-          alert(`Transaction failed: ${error.message}`);
+          console.error('Transaction failed:', error)
+          alert(`Transaction failed: ${error.message}`)
         },
       },
-    );
-  };
+    )
+  }
+
+  const handleSponsoredTransaction = async () => {
+    if (!account) {
+      alert('Please connect your wallet first')
+      return
+    }
+
+    const tx = new Transaction()
+    const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(1000)])
+    tx.transferObjects([coin], account.address)
+
+    const result = await executeSponsoredTx(tx)
+    if (result.success) {
+      alert(`Sponsored transaction successful! Digest: ${result.digest}`)
+    } else {
+      alert(`Sponsored transaction failed: ${result.error}`)
+    }
+  }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-4xl flex-col items-center justify-start py-16 px-8 bg-white dark:bg-black">
-        <div className="w-full flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-semibold text-black dark:text-zinc-50">
-            Sui Chat
-          </h1>
-          <ConnectButton />
-        </div>
+    <div className="flex min-h-screen flex-col bg-white dark:bg-black">
+      <Header />
 
-        {account && (
-          <div className="w-full space-y-6">
-            <div className="p-6 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
-              <h2 className="text-xl font-semibold mb-4 text-black dark:text-zinc-50">
-                Wallet Info
-              </h2>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400 break-all">
-                <strong>Address:</strong> {account.address}
-              </p>
-            </div>
-
-            <div className="p-6 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
-              <h2 className="text-xl font-semibold mb-4 text-black dark:text-zinc-50">
-                Owned Objects
-              </h2>
-              {isPending && <p className="text-zinc-600 dark:text-zinc-400">Loading...</p>}
-              {error && (
-                <p className="text-red-600 dark:text-red-400">
-                  Error: {error.message}
-                </p>
-              )}
-              {ownedObjects && (
-                <div className="space-y-2">
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                    Total objects: {ownedObjects.data.length}
+      <main className="flex flex-1 flex-col items-center justify-start py-12 px-8">
+        <div className="w-full max-w-2xl">
+          {account ? (
+            <div className="space-y-6">
+              {/* Auth method info */}
+              <div className="p-6 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+                <h2 className="text-xl font-semibold mb-4 text-black dark:text-zinc-50">
+                  Connection Info
+                </h2>
+                <div className="space-y-2 text-sm">
+                  <p className="text-zinc-600 dark:text-zinc-400">
+                    <strong>Address:</strong>{' '}
+                    <span className="font-mono break-all">{account.address}</span>
                   </p>
-                  {ownedObjects.data.length > 0 ? (
-                    <ul className="space-y-2 max-h-64 overflow-y-auto">
-                      {ownedObjects.data.map((obj) => (
-                        <li
-                          key={obj.data?.objectId}
-                          className="text-xs p-2 bg-white dark:bg-zinc-800 rounded break-all"
-                        >
-                          <strong>ID:</strong> {obj.data?.objectId}
-                          <br />
-                          <strong>Type:</strong> {obj.data?.type}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                      No objects found
+                  <p className="text-zinc-600 dark:text-zinc-400">
+                    <strong>Auth Method:</strong>{' '}
+                    <span className={isZkLogin ? 'text-blue-600' : 'text-green-600'}>
+                      {isZkLogin ? 'zkLogin (Google)' : 'Traditional Wallet'}
+                    </span>
+                  </p>
+                  {isZkLogin && (
+                    <p className="text-xs text-zinc-500 dark:text-zinc-500 mt-2">
+                      zkLogin uses ephemeral keys - no wallet popups for transactions!
                     </p>
                   )}
                 </div>
-              )}
-            </div>
+              </div>
 
-            <div className="p-6 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
-              <h2 className="text-xl font-semibold mb-4 text-black dark:text-zinc-50">
-                Test Transaction
-              </h2>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">
-                This will create a simple transaction that transfers 1000 MIST to yourself.
-              </p>
-              <button
-                onClick={handleTestTransaction}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Execute Test Transaction
-              </button>
-            </div>
-          </div>
-        )}
+              {/* Owned Objects */}
+              <div className="p-6 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+                <h2 className="text-xl font-semibold mb-4 text-black dark:text-zinc-50">
+                  Owned Objects
+                </h2>
+                {isPending && <p className="text-zinc-600 dark:text-zinc-400">Loading...</p>}
+                {error && (
+                  <p className="text-red-600 dark:text-red-400">
+                    Error: {error.message}
+                  </p>
+                )}
+                {ownedObjects && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                      Total objects: {ownedObjects.data.length}
+                    </p>
+                    {ownedObjects.data.length > 0 ? (
+                      <ul className="space-y-2 max-h-64 overflow-y-auto">
+                        {ownedObjects.data.slice(0, 5).map((obj) => (
+                          <li
+                            key={obj.data?.objectId}
+                            className="text-xs p-2 bg-white dark:bg-zinc-800 rounded break-all"
+                          >
+                            <strong>ID:</strong> {obj.data?.objectId}
+                            <br />
+                            <strong>Type:</strong> {obj.data?.type}
+                          </li>
+                        ))}
+                        {ownedObjects.data.length > 5 && (
+                          <li className="text-xs text-zinc-500 p-2">
+                            ... and {ownedObjects.data.length - 5} more
+                          </li>
+                        )}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                        No objects found
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
 
-        {!account && (
-          <div className="text-center space-y-4">
-            <p className="text-lg text-zinc-600 dark:text-zinc-400">
-              Connect your wallet to get started
-            </p>
-          </div>
-        )}
+              {/* Test Transactions */}
+              <div className="p-6 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+                <h2 className="text-xl font-semibold mb-4 text-black dark:text-zinc-50">
+                  Test Transactions
+                </h2>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">
+                  Transfer 1000 MIST to yourself.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={handleTestTransaction}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Normal Transaction
+                  </button>
+                  <button
+                    onClick={handleSponsoredTransaction}
+                    disabled={isSponsoredPending}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+                  >
+                    {isSponsoredPending ? 'Processing...' : 'Sponsored Transaction'}
+                  </button>
+                </div>
+                <p className="text-xs text-zinc-500 dark:text-zinc-500 mt-3">
+                  Sponsored transactions require ENOKI_PRIVATE_KEY configured on the backend.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-8">
+              <div className="text-center">
+                <h2 className="text-2xl font-semibold text-black dark:text-zinc-50 mb-2">
+                  Welcome to Sui Chat
+                </h2>
+                <p className="text-zinc-600 dark:text-zinc-400">
+                  Choose how you&apos;d like to connect
+                </p>
+              </div>
+
+              <LoginOptions />
+            </div>
+          )}
+        </div>
       </main>
     </div>
-  );
+  )
 }

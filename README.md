@@ -1,4 +1,8 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sui Chat Project Guide
+
+Sui Chat 是一個去中心化聊天應用，建構在 Sui 區塊鏈上。無中心化後端，所有資料存儲於鏈上或 Walrus 去中心化儲存。
+
+- `SMART_CONTRACT_SPEC.md` - 智能合約完整規格
 
 ## Getting Started
 
