@@ -109,7 +109,7 @@ export default function RoomsPage() {
 
   if (!account) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen relative">
         <Header />
         <main className="max-w-2xl mx-auto px-4 py-8">
           <Card>
@@ -134,7 +134,7 @@ export default function RoomsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen relative">
       <Header />
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Header */}

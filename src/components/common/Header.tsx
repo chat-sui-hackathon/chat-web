@@ -36,13 +36,13 @@ export function Header({ title = 'Sui Chat' }: HeaderProps) {
   }
 
   return (
-    <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black">
+    <header className="relative z-50 border-b border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-black/95 backdrop-blur-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo / Title */}
           <div className="flex items-center">
             <Link href="/" className="text-2xl font-semibold text-black dark:text-zinc-50">
-              {title}
+              Iceb3rg
             </Link>
           </div>
 

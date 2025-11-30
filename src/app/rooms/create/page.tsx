@@ -245,7 +245,7 @@ export default function CreateRoomPage() {
 
     if (!account) {
         return (
-            <div className="min-h-screen bg-background">
+            <div className="min-h-screen relative">
                 <Header />
                 <main className="max-w-2xl mx-auto px-4 py-16">
                     <Card>
@@ -263,7 +263,7 @@ export default function CreateRoomPage() {
 
     if (isLoadingProfile || (account && !isRegistered)) {
         return (
-            <div className="min-h-screen bg-background">
+            <div className="min-h-screen relative">
                 <Header />
                 <main className="max-w-2xl mx-auto px-4 py-16">
                     <Card>

@@ -39,7 +39,7 @@ export default function Home() {
   // If logged in, show loading while checking registration status
   if (account) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen relative">
         <Header />
         <main className="flex min-h-[calc(100vh-4rem)] items-center justify-center">
           <div className="text-center">
@@ -53,96 +53,109 @@ export default function Home() {
 
   // Not logged in - show welcome page
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <main className="max-w-4xl mx-auto px-4 py-8 sm:py-16">
-        {/* Hero Section */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl sm:text-5xl font-bold text-foreground mb-4">
-            Sui Chat
-          </h1>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Decentralized messaging on Sui blockchain with end-to-end encryption and zero gas fees
+    <div className="min-h-screen relative">
+      {/* Background Image */}
+      <div
+        className="fixed inset-0 bg-cover bg-center bg-no-repeat"
+        style={{
+          backgroundImage: 'url(/image.png)',
+        }}
+      >
+        {/* Overlay for better text readability */}
+        <div className="absolute inset-0 bg-black/40" />
+      </div>
+
+      <div className="relative">
+        <Header />
+        <main className="max-w-4xl mx-auto px-4 py-8 sm:py-16">
+          {/* Hero Section */}
+          <div className="text-center mb-12">
+            <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4">
+              Iceb3rg
+            </h1>
+            <p className="text-xl text-zinc-200 max-w-2xl mx-auto">
+              The Web3 chat that goes deep — Decentralized messaging on Sui blockchain with end-to-end encryption and zero gas fees
+            </p>
+          </div>
+
+          {/* Features */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
+            <Card className="bg-background/95 backdrop-blur-sm">
+              <CardContent className="pt-6">
+                <div className="flex flex-col items-center text-center">
+                  <div className="p-3 bg-primary/10 rounded-full mb-3">
+                    <Shield className="h-6 w-6 text-primary" />
+                  </div>
+                  <h3 className="font-semibold mb-1">Secure</h3>
+                  <p className="text-sm text-muted-foreground">
+                    End-to-end encrypted messages
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-background/95 backdrop-blur-sm">
+              <CardContent className="pt-6">
+                <div className="flex flex-col items-center text-center">
+                  <div className="p-3 bg-primary/10 rounded-full mb-3">
+                    <Zap className="h-6 w-6 text-primary" />
+                  </div>
+                  <h3 className="font-semibold mb-1">Zero Gas</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Sponsored transactions
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-background/95 backdrop-blur-sm">
+              <CardContent className="pt-6">
+                <div className="flex flex-col items-center text-center">
+                  <div className="p-3 bg-primary/10 rounded-full mb-3">
+                    <MessageSquare className="h-6 w-6 text-primary" />
+                  </div>
+                  <h3 className="font-semibold mb-1">On-chain</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Messages stored on Sui
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-background/95 backdrop-blur-sm">
+              <CardContent className="pt-6">
+                <div className="flex flex-col items-center text-center">
+                  <div className="p-3 bg-primary/10 rounded-full mb-3">
+                    <Users className="h-6 w-6 text-primary" />
+                  </div>
+                  <h3 className="font-semibold mb-1">Easy</h3>
+                  <p className="text-sm text-muted-foreground">
+                    No wallet needed
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Login Section */}
+          <Card className="max-w-md mx-auto bg-background/95 backdrop-blur-sm">
+            <CardHeader className="text-center">
+              <CardTitle>Get Started</CardTitle>
+              <CardDescription>
+                Sign in with your Google account to start chatting
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <LoginOptions />
+            </CardContent>
+          </Card>
+
+          {/* Footer note */}
+          <p className="text-center text-sm text-zinc-300 mt-8">
+            Built on Sui blockchain with zkLogin for seamless authentication
           </p>
-        </div>
-
-        {/* Features */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center text-center">
-                <div className="p-3 bg-primary/10 rounded-full mb-3">
-                  <Shield className="h-6 w-6 text-primary" />
-                </div>
-                <h3 className="font-semibold mb-1">Secure</h3>
-                <p className="text-sm text-muted-foreground">
-                  End-to-end encrypted messages
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center text-center">
-                <div className="p-3 bg-primary/10 rounded-full mb-3">
-                  <Zap className="h-6 w-6 text-primary" />
-                </div>
-                <h3 className="font-semibold mb-1">Zero Gas</h3>
-                <p className="text-sm text-muted-foreground">
-                  Sponsored transactions
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center text-center">
-                <div className="p-3 bg-primary/10 rounded-full mb-3">
-                  <MessageSquare className="h-6 w-6 text-primary" />
-                </div>
-                <h3 className="font-semibold mb-1">On-chain</h3>
-                <p className="text-sm text-muted-foreground">
-                  Messages stored on Sui
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center text-center">
-                <div className="p-3 bg-primary/10 rounded-full mb-3">
-                  <Users className="h-6 w-6 text-primary" />
-                </div>
-                <h3 className="font-semibold mb-1">Easy</h3>
-                <p className="text-sm text-muted-foreground">
-                  No wallet needed
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Login Section */}
-        <Card className="max-w-md mx-auto">
-          <CardHeader className="text-center">
-            <CardTitle>Get Started</CardTitle>
-            <CardDescription>
-              Sign in with your Google account to start chatting
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <LoginOptions />
-          </CardContent>
-        </Card>
-
-        {/* Footer note */}
-        <p className="text-center text-sm text-muted-foreground mt-8">
-          Built on Sui blockchain with zkLogin for seamless authentication
-        </p>
-      </main>
+        </main>
+      </div>
     </div>
   )
 }

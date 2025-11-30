@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sui Chat",
-  description: "Decentralized chat application on Sui blockchain",
+  title: "Iceb3rg",
+  description: "The Web3 chat that goes deep",
 };
 
 export default function RootLayout({

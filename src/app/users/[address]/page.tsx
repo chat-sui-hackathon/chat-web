@@ -31,7 +31,7 @@ export default function UserDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen relative">
         <Header />
         <main className="max-w-4xl mx-auto px-4 py-8">
           <div className="flex justify-center items-center py-12">
@@ -44,7 +44,7 @@ export default function UserDetailPage() {
 
   if (error || !exists || !profile) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen relative">
         <Header />
         <main className="max-w-4xl mx-auto px-4 py-8">
           <div className="mb-4">
