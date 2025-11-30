@@ -49,6 +49,7 @@ export default function ChatRoomPage() {
   const [messageText, setMessageText] = useState('')
   const [isSending, setIsSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   // Redirect if not registered
   useEffect(() => {
@@ -57,9 +58,18 @@ export default function ChatRoomPage() {
     }
   }, [account, isRegistered, router])
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom when new messages arrive, but only if user is near the bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    // Check if user is near the bottom (within 100px)
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
+
+    // Only auto-scroll if user is near bottom or if it's the first load
+    if (isNearBottom || messages.length <= 1) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [messages])
 
   const handleSendMessage = async () => {
@@ -218,7 +228,7 @@ export default function ChatRoomPage() {
 
         {/* Messages */}
         <Card className="flex-1 flex flex-col mb-4">
-          <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
+          <CardContent ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />

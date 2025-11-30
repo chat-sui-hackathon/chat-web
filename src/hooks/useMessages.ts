@@ -36,6 +36,77 @@ export function useMessages(chatId: string | null) {
         })
     }
 
+    // Helper function to fetch and append only missing messages (instead of refetching everything)
+    const fetchAndAppendMissingMessages = async (fromIndex: number, toIndex: number) => {
+        if (!chatId || fromIndex > toIndex) return
+
+        try {
+            const missingIndices: number[] = []
+            for (let i = fromIndex; i <= toIndex; i++) {
+                missingIndices.push(i)
+            }
+
+            if (missingIndices.length === 0) return
+
+            console.log('[useMessages] Fetching and appending missing messages:', {
+                chatId,
+                missingIndices,
+                count: missingIndices.length
+            })
+
+            // Fetch only the missing messages
+            const messagePromises = missingIndices.map((index: number) =>
+                client.getDynamicFieldObject({
+                    parentId: chatId,
+                    name: {
+                        type: 'u64',
+                        value: index.toString(),
+                    },
+                })
+            )
+
+            const results = await Promise.all(messagePromises)
+            const newMessages = results
+                .map((result, idx) => {
+                    if (result.data) {
+                        return parseMessageObject(result.data, missingIndices[idx])
+                    }
+                    return null
+                })
+                .filter(Boolean) as Message[]
+
+            if (newMessages.length > 0) {
+                // Find and update all message queries for this chat
+                // This ensures we update the cache regardless of the exact query key structure
+                queryClient.setQueriesData<Message[]>(
+                    { queryKey: ['messages', chatId] },
+                    (oldMessages = []) => {
+                        // Combine old and new, remove duplicates, sort, and keep last N
+                        const combined = [...oldMessages, ...newMessages]
+                        // Remove duplicates by messageIndex
+                        const unique = combined.filter((msg, idx, arr) => 
+                            arr.findIndex(m => m.messageIndex === msg.messageIndex) === idx
+                        )
+                        unique.sort((a, b) => a.messageIndex - b.messageIndex)
+                        return unique.slice(-MAX_MESSAGES_DISPLAY)
+                    }
+                )
+                console.log('[useMessages] Successfully appended new messages:', {
+                    chatId,
+                    appendedCount: newMessages.length
+                })
+            }
+        } catch (error) {
+            console.error('[useMessages] Error fetching missing messages:', {
+                chatId,
+                fromIndex,
+                toIndex,
+                error: error instanceof Error ? error.message : String(error)
+            })
+            throw error
+        }
+    }
+
     // Get chat room to get message count
     const { data: chatData, refetch: refetchChatRoom } = useSuiClientQuery(
         'getObject',
@@ -156,27 +227,65 @@ export function useMessages(chatId: string | null) {
     });
 
     // Fetch message objects
+    // Use stable query key (only chatId) to avoid re-renders when indices change
     const {
         data: messagesData,
         isLoading: isLoadingMessages,
         error: messagesError,
     } = useQuery({
-        queryKey: ['messages', chatId, indicesToFetch],
+        queryKey: ['messages', chatId],
         queryFn: async () => {
-            if (indicesToFetch.length === 0) {
+            // Recalculate indicesToFetch inside queryFn to get latest indices
+            const currentDynamicFields = await client.getDynamicFields({
+                parentId: chatId!,
+            });
+
+            const currentMessageIndices: number[] = [];
+            if (currentDynamicFields?.data) {
+                currentDynamicFields.data.forEach((field: any) => {
+                    const name = field.name;
+                    if (name) {
+                        let index: number | null = null;
+
+                        if (typeof name === 'number') {
+                            index = name;
+                        } else if (name.type === 'u64' || name.type === '0x1::string::String') {
+                            if (typeof name.value === 'number') {
+                                index = name.value;
+                            } else if (typeof name.value === 'string') {
+                                const parsed = parseInt(name.value, 10);
+                                if (!isNaN(parsed)) {
+                                    index = parsed;
+                                }
+                            }
+                        } else if (typeof name.value === 'number') {
+                            index = name.value;
+                        }
+
+                        if (index !== null && index >= 0 && index < messageCount) {
+                            currentMessageIndices.push(index);
+                        }
+                    }
+                });
+            }
+
+            currentMessageIndices.sort((a, b) => a - b);
+            const currentIndicesToFetch = currentMessageIndices.slice(-MAX_MESSAGES_DISPLAY);
+
+            if (currentIndicesToFetch.length === 0) {
                 console.log('[useMessages] No indices to fetch');
                 return [];
             }
 
             console.log('[useMessages] Fetching message objects:', {
                 chatId,
-                count: indicesToFetch.length,
-                indices: indicesToFetch
+                count: currentIndicesToFetch.length,
+                indices: currentIndicesToFetch
             });
 
             // Fetch dynamic field objects
             // Note: We need to use getDynamicFieldObject for each message
-            const messagePromises = indicesToFetch.map((index: number) =>
+            const messagePromises = currentIndicesToFetch.map((index: number) =>
                 client.getDynamicFieldObject({
                     parentId: chatId!,
                     name: {
@@ -194,7 +303,7 @@ export function useMessages(chatId: string | null) {
                 const data = firstSuccess.data as any;
                 console.log('[useMessages] First successful result structure:', {
                     chatId,
-                    index: indicesToFetch[results.indexOf(firstSuccess)],
+                    index: currentIndicesToFetch[results.indexOf(firstSuccess)],
                     dataKeys: Object.keys(data),
                     hasContent: !!data.content,
                     hasData: !!data.data,
@@ -222,7 +331,7 @@ export function useMessages(chatId: string | null) {
             const parsedMessages = results
                 .map((result, idx) => {
                     if (result.data) {
-                        return parseMessageObject(result.data, indicesToFetch[idx]);
+                        return parseMessageObject(result.data, currentIndicesToFetch[idx]);
                     }
                     return null;
                 })
@@ -247,7 +356,7 @@ export function useMessages(chatId: string | null) {
 
             return parsedMessages;
         },
-        enabled: indicesToFetch.length > 0 && !!chatId,
+        enabled: !!chatId && messageCount > 0,
     });
 
     // Ensure messages are sorted ascending (oldest first, latest at bottom)
@@ -323,11 +432,18 @@ export function useMessages(chatId: string | null) {
                     })
                 })
 
-                // Trigger refetch to load missing messages
-                refetch().catch((error) => {
-                    console.error('[useMessages] Error refetching due to missing messages:', {
+                // Fetch only missing messages and append them (instead of refetching everything)
+                fetchAndAppendMissingMessages(lastMessageIndex + 1, expectedLastIndex).catch((error) => {
+                    console.error('[useMessages] Error appending missing messages, falling back to refetch:', {
                         chatId,
                         error: error instanceof Error ? error.message : String(error)
+                    })
+                    // Fallback to full refetch on error
+                    refetch().catch((refetchError) => {
+                        console.error('[useMessages] Error in fallback refetch:', {
+                            chatId,
+                            error: refetchError instanceof Error ? refetchError.message : String(refetchError)
+                        })
                     })
                 })
             }
@@ -476,7 +592,7 @@ export function useMessages(chatId: string | null) {
                                                     });
 
                                                     // Check if message already exists (deduplication)
-                                                    const existingMessages = queryClient.getQueryData<Message[]>(['messages', chatId, indicesToFetch]) || [];
+                                                    const existingMessages = queryClient.getQueryData<Message[]>(['messages', chatId]) || [];
                                                     const messageExists = existingMessages.some(m => m.messageIndex === messageIndex);
 
                                                     if (!messageExists) {
@@ -494,9 +610,9 @@ export function useMessages(chatId: string | null) {
                                                         if (result.data) {
                                                             const newMessage = parseMessageObject(result.data, messageIndex);
                                                             if (newMessage) {
-                                                                // Update the query cache with the new message
-                                                                queryClient.setQueryData<Message[]>(
-                                                                    ['messages', chatId, indicesToFetch],
+                                                                // Update the query cache with the new message (append only)
+                                                                queryClient.setQueriesData<Message[]>(
+                                                                    { queryKey: ['messages', chatId] },
                                                                     (oldMessages = []) => {
                                                                         const exists = oldMessages.some(m => m.messageIndex === messageIndex);
                                                                         if (exists) return oldMessages;
@@ -508,8 +624,6 @@ export function useMessages(chatId: string | null) {
                                                                         return updated.slice(-MAX_MESSAGES_DISPLAY);
                                                                     }
                                                                 );
-
-                                                                queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
                                                             }
                                                         }
                                                     }
@@ -546,8 +660,7 @@ export function useMessages(chatId: string | null) {
                                                 })
                                             })
 
-                                            // Trigger refetch to reload messages
-                                            await refetch()
+                                            // Messages are already appended to cache above, no need to refetch
                                         }
                                     }
                                 } catch (txError) {
@@ -572,7 +685,25 @@ export function useMessages(chatId: string | null) {
                                 })
                             })
                             
-                            await refetch();
+                            // Try to append missing messages instead of full refetch
+                            const currentMessages = queryClient.getQueryData<Message[]>(['messages', chatId]) || []
+                            const currentLastIndex = currentMessages.length > 0 
+                                ? currentMessages[currentMessages.length - 1].messageIndex 
+                                : -1
+                            // Get message count from chat room
+                            const chatData = await client.getObject({
+                                id: chatId,
+                                options: { showContent: true },
+                            })
+                            const msgCount = chatData?.data?.content?.dataType === 'moveObject'
+                                ? Number((chatData.data.content.fields as any)?.message_count || 0)
+                                : 0
+                            const expectedLastIndex = msgCount - 1
+                            if (currentLastIndex < expectedLastIndex) {
+                                await fetchAndAppendMissingMessages(currentLastIndex + 1, expectedLastIndex).catch(() => {
+                                    refetch() // Fallback
+                                })
+                            }
                         }
                     } catch (error) {
                         console.error('[useMessages] Error processing checkpoint:', {
@@ -589,8 +720,18 @@ export function useMessages(chatId: string | null) {
                             })
                         })
                         
-                        // Fallback to polling on error
-                        await refetch();
+                        // Fallback: try to append missing messages instead of full refetch
+                        const currentMessages = queryClient.getQueryData<Message[]>(['messages', chatId]) || []
+                        const currentLastIndex = currentMessages.length > 0 
+                            ? currentMessages[currentMessages.length - 1].messageIndex 
+                            : -1
+                        const expectedLastIndex = messageCount - 1
+                        if (currentLastIndex < expectedLastIndex) {
+                            await fetchAndAppendMissingMessages(currentLastIndex + 1, expectedLastIndex).catch(() => {
+                                // Fallback to refetch only if append fails
+                                refetch()
+                            })
+                        }
                     }
                 }
             });
@@ -697,11 +838,17 @@ export function useMessages(chatId: string | null) {
                         })
                     })
 
-                    // Invalidate all message queries for this chat to ensure fresh data
-                    queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
-
-                    // Refetch messages
-                    await refetch();
+                    // Append missing messages instead of full refetch
+                    const currentMessages = queryClient.getQueryData<Message[]>(['messages', chatId]) || []
+                    const currentLastIndex = currentMessages.length > 0 
+                        ? currentMessages[currentMessages.length - 1].messageIndex 
+                        : -1
+                    const expectedLastIndex = currentMessageCount - 1
+                    if (currentLastIndex < expectedLastIndex) {
+                        await fetchAndAppendMissingMessages(currentLastIndex + 1, expectedLastIndex).catch(() => {
+                            refetch() // Fallback
+                        })
+                    }
                 } else {
                     console.log('[useMessages] No new messages, skipping refetch:', {
                         chatId,
