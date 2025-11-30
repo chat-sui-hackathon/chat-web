@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react'
 import { useCurrentAccount, useSignTransaction, useSuiClient } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
-import { toBase64 } from '@/lib/crypto'
+import { toBase64, fromBase64 } from '@/lib/crypto'
 
 export type SponsoredTransactionResult = {
   success: boolean
@@ -21,16 +21,16 @@ export type UseSponsoredTransactionOptions = {
 /**
  * 用於執行 sponsored transaction 的 hook
  *
- * 流程（用戶先簽名，更安全）：
- * 1. 用戶建立交易（知道自己在簽什麼）
- * 2. 用戶用 ephemeral key 簽名（無錢包 popup，如果是 zkLogin）
- * 3. 把「用戶簽名 + 交易」傳到後端
- * 4. 後端加 gas + sponsor 簽名
- * 5. 兩個簽名一起提交到鏈上
+ * 流程（適用於 0 balance 的 zkLogin 帳戶）：
+ * 1. 用戶建立交易（知道自己在做什麼）
+ * 2. 序列化 transaction kind（不含 gas）
+ * 3. 傳到後端讓 Enoki sponsor（加上 gas 資訊）
+ * 4. 用戶簽名 sponsored 後的完整交易
+ * 5. 後端用兩個簽名執行交易
  *
  * 安全性：
- * - 用戶先簽名，知道自己在簽什麼
- * - 後端只能加 gas，無法修改交易內容（否則用戶簽名會失效）
+ * - 用戶建立交易，知道自己在做什麼
+ * - 用戶簽名的是包含 gas 資訊的完整交易，可以驗證
  */
 export function useSponsoredTransaction(options?: UseSponsoredTransactionOptions) {
   const [isPending, setIsPending] = useState(false)
@@ -57,34 +57,63 @@ export function useSponsoredTransaction(options?: UseSponsoredTransactionOptions
         transaction.setSender(account.address)
 
         // 2. 序列化交易（只有 transaction kind，不含 gas 資訊）
-        const txBytes = await transaction.build({
+        const txKindBytes = await transaction.build({
           client: suiClient,
           onlyTransactionKind: true,
         })
 
-        // 3. 用戶先簽名（用 ephemeral key，如果是 zkLogin 則無 popup）
-        const { signature: userSignature } = await signTransaction({
-          transaction,
-        })
-
-        // 4. 把「用戶簽名 + 交易」傳到後端進行 sponsorship
-        const response = await fetch('/api/sponsor', {
+        // 3. 先傳到後端讓 Enoki sponsor（取得包含 gas 的完整交易）
+        const sponsorResponse = await fetch('/api/sponsor', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            txBytes: toBase64(txBytes),
+            txBytes: toBase64(txKindBytes),
+            sender: account.address,
+          }),
+        })
+
+        if (!sponsorResponse.ok) {
+          const errorData = await sponsorResponse.json().catch(() => ({}))
+          throw new Error(errorData.error || `Sponsor failed: ${sponsorResponse.status}`)
+        }
+
+        const sponsorData = await sponsorResponse.json()
+
+        // Debug: log sponsor response
+        console.log('Sponsor response:', sponsorData)
+
+        if (!sponsorData.txBytes || !sponsorData.digest) {
+          throw new Error(`Sponsor response missing txBytes or digest: ${JSON.stringify(sponsorData)}`)
+        }
+
+        // 4. 用戶簽名 sponsored 後的完整交易
+        const sponsoredTxBytes = fromBase64(sponsorData.txBytes)
+        const sponsoredTx = Transaction.from(sponsoredTxBytes)
+
+        const { signature: userSignature } = await signTransaction({
+          transaction: sponsoredTx,
+        })
+
+        // 5. 把 digest + 用戶簽名傳到後端，讓 Enoki 執行
+        const executeResponse = await fetch('/api/sponsor/execute', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            digest: sponsorData.digest,
             userSignature,
           }),
         })
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.error || `Sponsor failed: ${response.status}`)
+        if (!executeResponse.ok) {
+          const errorData = await executeResponse.json().catch(() => ({}))
+          throw new Error(errorData.error || `Execute failed: ${executeResponse.status}`)
         }
 
-        const result: SponsoredTransactionResult = await response.json()
+        const result: SponsoredTransactionResult = await executeResponse.json()
 
         if (result.success) {
           options?.onSuccess?.(result)

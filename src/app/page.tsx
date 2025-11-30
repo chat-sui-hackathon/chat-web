@@ -61,8 +61,11 @@ export default function Home() {
     }
 
     const tx = new Transaction()
-    const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(1000)])
-    tx.transferObjects([coin], account.address)
+    // 使用 clock::timestamp_ms 測試（不需要用戶的 coin）
+    tx.moveCall({
+      target: '0x2::clock::timestamp_ms',
+      arguments: [tx.object('0x6')],
+    })
 
     const result = await executeSponsoredTx(tx)
     if (result.success) {

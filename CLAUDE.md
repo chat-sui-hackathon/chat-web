@@ -62,6 +62,85 @@ signPersonalMessage("sui-chat:derive-encryption-key:v1")
 - secretKey 只存 memory，不存 localStorage
 - 切換帳號時清除所有快取
 
+### zkLogin Module (`src/lib/zklogin.ts`)
+
+Utilities for working with Enoki zkLogin:
+
+**JWT Utilities**:
+- `decodeJwtPayload(jwt)` - Decode JWT payload (no verification)
+- `isJwtExpired(jwt)` - Check if JWT is expired
+
+**Enoki Session**:
+- `getJwtFromWallet(wallet)` - Get JWT from connected Enoki wallet
+- `getZkLoginSessionData(wallet)` - Get full session data (jwt, sub, iss, aud)
+
+**User Salt**:
+- `fetchUserSalt(jwt)` - Fetch userSalt from `/api/zklogin/salt` endpoint
+
+### Hooks (`src/hooks/`)
+
+**useZkLoginKeypair** - Derive encryption keypair from zkLogin session:
+```typescript
+const {
+  keypair,           // Keypair | null - The derived X25519 keypair
+  publicKeyBase64,   // string | null - Base64 encoded public key
+  isLoading,         // boolean
+  error,             // Error | null
+  derive,            // () => Promise<{ keypair, publicKeyBase64 } | null>
+  clear,             // () => void
+  isZkLogin,         // boolean - Whether connected via zkLogin
+} = useZkLoginKeypair({
+  autoDerive: false,  // Auto-derive on connect
+  onSuccess: (keypair) => {},
+  onError: (error) => {},
+})
+```
+
+**useSponsoredTransaction** - Execute sponsored transactions via Enoki:
+```typescript
+const { execute, isPending, error } = useSponsoredTransaction({
+  onSuccess: (result) => {},
+  onError: (error) => {},
+})
+
+// Usage
+const tx = new Transaction()
+tx.moveCall({ ... })
+const result = await execute(tx)
+```
+
+**useAuthMethod** - Detect authentication method:
+```typescript
+const { authMethod, isZkLogin, isWallet } = useAuthMethod()
+// authMethod: 'zkLogin' | 'wallet' | null
+```
+
+### zkLogin Key Derivation
+
+For zkLogin users, keypair derivation uses stable JWT claims instead of wallet signature:
+
+```
+JWT claims (sub, iss, aud) + userSalt
+  → HKDF-SHA256
+  → 32 bytes seed
+  → X25519 keypair
+```
+
+This ensures the same user always derives the same keypair across sessions.
+
+### Sponsored Transactions
+
+Flow for zero-balance zkLogin accounts:
+1. Client builds transaction kind (no gas info)
+2. Backend calls Enoki `/transaction-blocks/sponsor` → returns bytes + digest
+3. Client signs the sponsored transaction
+4. Backend calls Enoki `/transaction-blocks/sponsor/{digest}` with user signature
+
+API Routes:
+- `POST /api/sponsor` - Get sponsored transaction bytes
+- `POST /api/sponsor/execute` - Execute with user signature
+- `POST /api/zklogin/salt` - Get userSalt from Enoki
+
 ### Smart Contract Design (Sui Move)
 
 Three modules: `config`, `profile`, `chat`

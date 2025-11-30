@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getFullnodeUrl, SuiClient } from '@mysten/sui/client'
 
 const ENOKI_API_URL = 'https://api.enoki.mystenlabs.com/v1'
 const NETWORK = process.env.NEXT_PUBLIC_SUI_NETWORK || 'testnet'
@@ -14,18 +13,14 @@ const ALLOWED_TARGETS: string[] = [
 ]
 
 /**
- * Sponsor Transaction API
+ * Sponsor Transaction API - Step 1: Get Sponsorship
  *
- * 流程（用戶先簽名版本）：
- * 1. 前端建立交易並用 ephemeral key 簽名
- * 2. 前端把「用戶簽名 + 交易」傳到這個 API
+ * 流程：
+ * 1. 前端建立 transaction kind bytes
+ * 2. 傳到這個 API
  * 3. 這個 API 呼叫 Enoki 進行 sponsorship
- * 4. Enoki 返回 sponsor 簽名
- * 5. 這個 API 用兩個簽名執行交易
- *
- * 安全性：
- * - 用戶先簽名，知道自己在簽什麼
- * - 後端只能加 gas，無法修改交易內容（否則用戶簽名會失效）
+ * 4. 返回 sponsored tx bytes + sponsor signature 給前端
+ * 5. 前端簽名後呼叫 /api/sponsor/execute
  */
 export async function POST(request: NextRequest) {
   try {
@@ -36,26 +31,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { txBytes, userSignature, jwt } = await request.json()
+    const { txBytes, sender } = await request.json()
 
-    if (!txBytes || !userSignature) {
+    if (!txBytes) {
       return NextResponse.json(
-        { error: 'Missing txBytes or userSignature' },
+        { error: 'Missing txBytes' },
         { status: 400 }
       )
     }
 
-    // 1. 呼叫 Enoki API 進行 sponsorship
+    if (!sender) {
+      return NextResponse.json(
+        { error: 'Missing sender address' },
+        { status: 400 }
+      )
+    }
+
+    // 呼叫 Enoki API 進行 sponsorship
     const sponsorRes = await fetch(`${ENOKI_API_URL}/transaction-blocks/sponsor`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${ENOKI_PRIVATE_KEY}`,
         'Content-Type': 'application/json',
-        ...(jwt ? { 'zklogin-jwt': jwt } : {}),
       },
       body: JSON.stringify({
         network: NETWORK,
         transactionBlockKindBytes: txBytes,
+        sender,
         // 如果有設定白名單，可以限制只允許特定的 Move calls
         ...(ALLOWED_TARGETS.length > 0 ? { allowedMoveCallTargets: ALLOWED_TARGETS } : {}),
       }),
@@ -70,26 +72,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const sponsorData = await sponsorRes.json()
-    const { digest, signature: sponsorSignature, txBytes: sponsoredTxBytes } = sponsorData
+    const sponsorRes_json = await sponsorRes.json()
 
-    // 2. 用兩個簽名執行交易
-    const client = new SuiClient({ url: getFullnodeUrl(NETWORK as 'testnet' | 'devnet' | 'mainnet') })
+    // Debug: log Enoki response
+    console.log('Enoki sponsor response:', JSON.stringify(sponsorRes_json, null, 2))
 
-    const result = await client.executeTransactionBlock({
-      transactionBlock: sponsoredTxBytes || txBytes,
-      signature: [userSignature, sponsorSignature],
-      options: {
-        showEffects: true,
-        showEvents: true,
-      },
-    })
+    // Enoki 回應格式: { data: { digest, bytes } }
+    const sponsorData = sponsorRes_json.data || sponsorRes_json
 
+    if (!sponsorData.bytes) {
+      return NextResponse.json(
+        { error: 'Invalid sponsor response', details: JSON.stringify(sponsorRes_json) },
+        { status: 500 }
+      )
+    }
+
+    // 返回 sponsored tx bytes 和 sponsor signature
+    // 注意：Enoki sponsor API 不返回 signature，signature 會在 execute 時由 Enoki 提供
+    // 或者我們需要用不同的 API flow
     return NextResponse.json({
-      success: true,
-      digest: result.digest,
-      effects: result.effects,
-      events: result.events,
+      txBytes: sponsorData.bytes,
+      digest: sponsorData.digest,
     })
   } catch (error) {
     console.error('Sponsor API error:', error)
