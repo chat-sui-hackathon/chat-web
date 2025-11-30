@@ -30,7 +30,7 @@ export default function ChatRoomPage() {
   // Ensure chatId is always defined (even if null) before hooks use it
   const chatId = (params?.id as string | undefined) || null
 
-  const { data: chatRoomData, isLoading: isLoadingRoom, error: roomError } = useChatRoom(chatId)
+  const { data: chatRoomData, isLoading: isLoadingRoom, error: roomError, refetch: refetchChatRoom } = useChatRoom(chatId)
   const { messages, messageCount, isLoading: isLoadingMessages, error: messagesError, refetch: refetchMessages } = useMessages(chatId)
   const { mutate: signAndExecuteTransaction, isPending } = useSignAndExecuteTransaction()
 

@@ -17,9 +17,27 @@ export function useMessages(chatId: string | null) {
     const queryClient = useQueryClient();
     const subscriptionRef = useRef<(() => void) | null>(null);
     const lastMessageCountRef = useRef<number>(0);
+    const lastMismatchCheckRef = useRef<{ messageCount: number; messagesCount: number; lastMessageIndex: number } | null>(null);
+
+    // Helper function to invalidate all chat object queries (regardless of options)
+    const invalidateChatObjectQueries = () => {
+        if (!chatId) return
+        // Use predicate to match queries with different option structures
+        // This ensures both useMessages and useChatRoom queries are invalidated
+        queryClient.invalidateQueries({ 
+            predicate: (query) => {
+                const key = query.queryKey
+                if (!Array.isArray(key) || key.length < 3) return false
+                // Match queries like ['sui-client', 'getObject', chatId] or ['sui-client', 'getObject', { id: chatId, ... }]
+                return key[0] === 'sui-client' && 
+                       key[1] === 'getObject' && 
+                       (key[2] === chatId || (typeof key[2] === 'object' && key[2]?.id === chatId))
+            }
+        })
+    }
 
     // Get chat room to get message count
-    const { data: chatData } = useSuiClientQuery(
+    const { data: chatData, refetch: refetchChatRoom } = useSuiClientQuery(
         'getObject',
         {
             id: chatId || '',
@@ -249,6 +267,78 @@ export function useMessages(chatId: string | null) {
         });
     }
 
+    // Monitor for missing messages by comparing last message index with message count
+    // Trigger refetch if the last message index is less than (messageCount - 1)
+    useEffect(() => {
+        if (!chatId || isLoading || isLoadingMessages) {
+            return
+        }
+
+        // Find the last (highest) message index in the loaded messages
+        // Messages are sorted ascending, so the last one has the highest index
+        const lastMessageIndex = messages.length > 0 
+            ? messages[messages.length - 1].messageIndex 
+            : -1
+
+        // Message indices are 0-based, so the last message should be at index (messageCount - 1)
+        // If lastMessageIndex < (messageCount - 1), we're missing newer messages
+        // Also check if we have no messages but messageCount > 0
+        const expectedLastIndex = messageCount - 1
+        const hasMissingMessages = messageCount > 0 && (
+            messages.length === 0 || 
+            lastMessageIndex < expectedLastIndex
+        )
+
+        if (hasMissingMessages) {
+            // Check if we've already handled this exact mismatch to avoid infinite loops
+            const lastCheck = lastMismatchCheckRef.current
+            const isSameMismatch = lastCheck && 
+                lastCheck.messageCount === messageCount && 
+                lastCheck.lastMessageIndex === lastMessageIndex
+
+            if (!isSameMismatch) {
+                const missingCount = expectedLastIndex - lastMessageIndex
+                console.log('[useMessages] Missing messages detected (last index < message count), triggering refetch:', {
+                    chatId,
+                    messageCount,
+                    lastMessageIndex,
+                    expectedLastIndex,
+                    missingCount,
+                    messagesCount: messages.length
+                })
+
+                // Update the ref to track this mismatch check
+                lastMismatchCheckRef.current = { 
+                    messageCount, 
+                    messagesCount: messages.length,
+                    lastMessageIndex 
+                }
+
+                // Invalidate and refetch chat room query to refresh message count
+                invalidateChatObjectQueries()
+                refetchChatRoom().catch((error) => {
+                    console.warn('[useMessages] Error refetching chat room:', {
+                        chatId,
+                        error: error instanceof Error ? error.message : String(error)
+                    })
+                })
+
+                // Trigger refetch to load missing messages
+                refetch().catch((error) => {
+                    console.error('[useMessages] Error refetching due to missing messages:', {
+                        chatId,
+                        error: error instanceof Error ? error.message : String(error)
+                    })
+                })
+            }
+        } else if (
+            (messageCount === 0 && messages.length === 0) ||
+            (messageCount > 0 && messages.length > 0 && lastMessageIndex === expectedLastIndex)
+        ) {
+            // Reset mismatch check when we have all messages (or no messages expected)
+            lastMismatchCheckRef.current = null
+        }
+    }, [chatId, messageCount, messages, isLoading, isLoadingMessages, refetch, refetchChatRoom, queryClient])
 
     // Subscribe to MessageSent events for real-time updates using gRPC
     useEffect(() => {
@@ -368,6 +458,8 @@ export function useMessages(chatId: string | null) {
                                             eventCount: messageEvents.length
                                         });
 
+                                        let hasNewMessages = false
+
                                         // Process each MessageSent event
                                         for (const event of messageEvents) {
                                             const parsedJson = event.parsedJson as any;
@@ -388,6 +480,8 @@ export function useMessages(chatId: string | null) {
                                                     const messageExists = existingMessages.some(m => m.messageIndex === messageIndex);
 
                                                     if (!messageExists) {
+                                                        hasNewMessages = true
+
                                                         // Fetch the new message
                                                         const result = await client.getDynamicFieldObject({
                                                             parentId: chatId,
@@ -422,6 +516,39 @@ export function useMessages(chatId: string | null) {
                                                 }
                                             }
                                         }
+
+                                        // Trigger refetch when new messages are detected
+                                        if (hasNewMessages) {
+                                            console.log('[useMessages] New messages detected via gRPC, triggering refetch:', { chatId })
+                                            
+                                            // Update message count ref and invalidate chat room query
+                                            const currentChatData = await client.getObject({
+                                                id: chatId,
+                                                options: {
+                                                    showContent: true,
+                                                },
+                                            })
+                                            
+                                            const currentMessageCount = currentChatData?.data?.content?.dataType === 'moveObject'
+                                                ? Number((currentChatData.data.content.fields as any)?.message_count || 0)
+                                                : 0
+                                            
+                                            if (currentMessageCount > lastMessageCountRef.current) {
+                                                lastMessageCountRef.current = currentMessageCount
+                                            }
+
+                                            // Invalidate and refetch chat room query to update message count
+                                            invalidateChatObjectQueries()
+                                            await refetchChatRoom().catch((error) => {
+                                                console.warn('[useMessages] Error refetching chat room:', {
+                                                    chatId,
+                                                    error: error instanceof Error ? error.message : String(error)
+                                                })
+                                            })
+
+                                            // Trigger refetch to reload messages
+                                            await refetch()
+                                        }
                                     }
                                 } catch (txError) {
                                     // Skip individual transaction errors
@@ -435,6 +562,16 @@ export function useMessages(chatId: string | null) {
                         } else {
                             // Fallback: just trigger a refetch if we can't get transaction digests
                             console.log('[useMessages] Checkpoint received, triggering refetch:', { chatId });
+                            
+                            // Invalidate and refetch chat room query to refresh message count
+                            invalidateChatObjectQueries()
+                            await refetchChatRoom().catch((error) => {
+                                console.warn('[useMessages] Error refetching chat room:', {
+                                    chatId,
+                                    error: error instanceof Error ? error.message : String(error)
+                                })
+                            })
+                            
                             await refetch();
                         }
                     } catch (error) {
@@ -442,6 +579,16 @@ export function useMessages(chatId: string | null) {
                             chatId,
                             error: error instanceof Error ? error.message : String(error)
                         });
+                        
+                        // Invalidate and refetch chat room query to refresh message count
+                        invalidateChatObjectQueries()
+                        await refetchChatRoom().catch((error) => {
+                            console.warn('[useMessages] Error refetching chat room:', {
+                                chatId,
+                                error: error instanceof Error ? error.message : String(error)
+                            })
+                        })
+                        
                         // Fallback to polling on error
                         await refetch();
                     }
@@ -528,7 +675,8 @@ export function useMessages(chatId: string | null) {
                     newMessageCount: currentMessageCount - lastKnownCount
                 });
 
-                // Only refetch if message count has increased
+                // Refetch if message count has increased
+                // The mismatch check is handled by the separate useEffect above
                 if (currentMessageCount > lastKnownCount) {
                     console.log('[useMessages] Message count increased, fetching new messages:', {
                         chatId,
@@ -539,6 +687,18 @@ export function useMessages(chatId: string | null) {
 
                     // Update the ref before refetching
                     lastMessageCountRef.current = currentMessageCount;
+
+                    // Invalidate and refetch chat room query to refresh message count
+                    invalidateChatObjectQueries()
+                    await refetchChatRoom().catch((error) => {
+                        console.warn('[useMessages] Error refetching chat room:', {
+                            chatId,
+                            error: error instanceof Error ? error.message : String(error)
+                        })
+                    })
+
+                    // Invalidate all message queries for this chat to ensure fresh data
+                    queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
 
                     // Refetch messages
                     await refetch();
@@ -568,7 +728,7 @@ export function useMessages(chatId: string | null) {
             }
             subscriptionRef.current = null;
         };
-    }, [chatId, client, queryClient, refetch]);
+    }, [chatId, client, queryClient, refetch, refetchChatRoom]);
 
     console.log('[useMessages] Final messages state:', {
         chatId,
