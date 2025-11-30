@@ -17,6 +17,27 @@ export function sendMessageTransaction(
     contentType: number, // 0: Text, 1: Image, 2: File
     content: string // Message text or blob ID
 ): TransactionResult {
+    // Validate arguments
+    console.log('[sendMessageTransaction] Arguments:', {
+        appConfigId: APP_CONFIG_ID,
+        chatId,
+        chatIdValid: chatId && chatId.startsWith('0x') && chatId.length === 66,
+        contentType,
+        contentLength: content?.length,
+        contentPreview: content?.substring(0, 50),
+    })
+
+    if (!APP_CONFIG_ID || !APP_CONFIG_ID.startsWith('0x')) {
+        console.error('[sendMessageTransaction] Invalid APP_CONFIG_ID:', APP_CONFIG_ID)
+    }
+    if (!chatId || !chatId.startsWith('0x') || chatId.length !== 66) {
+        console.error('[sendMessageTransaction] Invalid chatId format:', {
+            chatId,
+            length: chatId?.length,
+            startsWithOx: chatId?.startsWith('0x'),
+        })
+    }
+
     return tx.moveCall({
         target: `${CHAT_MODULE}::send_message`,
         arguments: [
