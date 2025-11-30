@@ -11,6 +11,9 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@mysten/dapp-kit": "^0.19.9",
+    "@mysten/sui": "^1.45.0",
+    "@tanstack/react-query": "^5.90.11",
     "libsodium-wrappers": "^0.7.15",
     "next": "16.0.5",
     "react": "19.2.0",
