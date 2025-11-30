@@ -74,9 +74,15 @@ Sui Chat is a decentralized chat application built on the Sui blockchain. It ena
 **Backend:**
 - Sui Move smart contracts
 - On-chain storage via Dynamic Object Fields
+- Backend server only when necessary (不得已才用)
 
 **Encryption:**
 - libsodium-wrappers (for end-to-end encryption in private chats)
+
+**Network Support:**
+- Devnet and testnet only (no mainnet support initially)
+- Users switch networks by switching wallet address
+- Network configuration in providers.tsx
 
 ---
 
@@ -151,7 +157,27 @@ If Private:
     ├─ Call create_private_chat() with encrypted key
     └─ Transfer Passes to invitees
     ↓
+Register room in ChatRegistry (if registry exists)
+    ↓
 Navigate to new Chat Room
+```
+
+### 7. Room Closure Flow
+
+```
+Host clicks "Close Room" in settings
+    ↓
+Confirm closure action
+    ↓
+Call close_room() on-chain
+    ↓
+All members are automatically kicked
+    ↓
+Room becomes inaccessible
+    ↓
+Members see "Room has been closed" message
+    ↓
+No room archiving (room remains on-chain but inactive)
 ```
 
 ### 4. Sending Messages Flow
@@ -269,6 +295,11 @@ Store message on-chain
   - Name required, non-empty
   - Auto-generate encryption key pair
   - Show wallet connection status
+- **Profile Management:**
+  - Profile is publicly visible after registration
+  - User can update name and portrait URL after registration
+  - Encryption key can only be changed if user is not in any private room
+  - Profile updates call `update_user()` function on-chain
 
 #### 2. Chat Room List Interface
 - **Layout:** Grid or list view
@@ -314,9 +345,14 @@ Store message on-chain
   - Tip amount input (optional)
   - Send button
 - **Features:**
-  - Real-time message updates (polling or subscription)
+  - Real-time message updates (auto-refresh via polling)
   - Message encryption indicator (for private rooms)
+  - Cache support for offline message viewing
+  - Mobile responsive design
+  - Toast notifications for actions and errors
+  - Loading spinners for async operations
   - Typing indicators (future enhancement)
+  - Note: No theme switching support (single theme)
 
 #### 4. User List Interface
 - **Display:**
@@ -349,8 +385,9 @@ Store message on-chain
 
 **UI State:**
 - Active view (list/room/profile)
-- Loading states
-- Error messages
+- Loading states (spinners for async operations)
+- Error messages (toast notifications)
+- Cached data (messages, rooms, users)
 
 ### Data Fetching Strategy
 
@@ -360,9 +397,10 @@ Store message on-chain
 3. Fetch messages for active room (paginated)
 
 **Real-time Updates:**
-- Polling: Refresh messages every 5-10 seconds
+- Polling: Refresh messages every 5-10 seconds (auto-refresh)
 - Event subscription: Listen to Sui events for new messages
 - Optimistic updates: Show message immediately, confirm on-chain
+- Cache messages locally for offline viewing
 
 **Pagination:**
 - Messages: Load 50 messages per page
@@ -521,6 +559,9 @@ interface ChatRegistry {
 - Key encrypted with each member's public key
 - Stored in Pass objects
 - Messages encrypted with symmetric key before on-chain storage
+- **No key rotation**: Encryption keys do not rotate
+- Keys remain static for the lifetime of the room
+- If security is compromised, room must be recreated with new key
 
 **Encryption Library:**
 - Use `libsodium-wrappers` for encryption operations
@@ -572,8 +613,47 @@ interface ChatRegistry {
 2. **Validate all on-chain data before displaying**
 3. **Sanitize user inputs before sending to chain**
 4. **Use HTTPS for all network requests**
-5. **Implement rate limiting for message creation**
+5. **Implement rate limiting for message creation (20 messages/minute)**
 6. **Verify message signatures/ownership**
+
+### Error Handling
+
+**Transaction Failures:**
+- Show toast notification with error message
+- Allow user to retry the transaction
+- Display specific error codes when available
+- Handle network errors gracefully
+
+**Lost Encryption Key:**
+- User can regenerate encryption key pair
+- Key can only be updated if user is not in any private room
+- Update encryption public key on-chain via `update_user()` function
+- Old private key becomes invalid for new messages
+- Note: User will lose access to decrypt old messages in private rooms if key is lost
+
+**User Banned Mid-Conversation:**
+- User is immediately removed from the room
+- UI updates to show "You have been banned" message
+- User cannot send messages or rejoin the room
+- Ban status checked before every message attempt
+
+**Room Host Becomes Inactive:**
+- No effect on room functionality
+- Room continues to operate normally
+- Host privileges remain with original host
+- Host can transfer host identity to another member
+
+**Pass Lost or Transferred:**
+- Original owner is automatically kicked from private room
+- Pass ownership is verified on-chain
+- If Pass is transferred to another address, new owner gains access
+- Original owner loses access immediately
+
+**Error Recovery Mechanisms:**
+- Retry failed transactions with exponential backoff
+- Cache successful operations to prevent duplicate submissions
+- Validate user state before critical operations
+- Provide clear error messages and recovery suggestions
 
 ---
 
@@ -606,8 +686,9 @@ interface ChatRegistry {
 **Stored Off-chain:**
 - Encryption private keys (encrypted localStorage)
 - UI state and preferences
-- Cached message data (for performance)
-- File content (IPFS or similar)
+- Cached message data (for performance and offline viewing)
+- File content (Walrus IPFS)
+- Emoji reactions (future feature, stored off-chain)
 
 **Hybrid Approach:**
 - Metadata on-chain (message text, sender, timestamp)
@@ -646,11 +727,13 @@ chat-web/src/
 │   ├── room/
 │   │   ├── RoomCard.tsx
 │   │   ├── CreateRoomModal.tsx
-│   │   └── RoomSettings.tsx
+│   │   ├── RoomSettings.tsx
+│   │   └── TipRankingBoard.tsx
 │   └── common/
 │       ├── Header.tsx
 │       ├── LoadingSpinner.tsx
-│       └── ErrorMessage.tsx
+│       ├── ErrorMessage.tsx
+│       └── Toast.tsx
 ├── lib/
 │   ├── crypto.ts               # Encryption utilities
 │   ├── sui/
@@ -659,12 +742,13 @@ chat-web/src/
 │   │   ├── chat.ts            # Chat contract calls
 │   │   ├── message.ts         # Message contract calls
 │   │   └── pass.ts            # Pass contract calls
-│   └── ipfs.ts                # IPFS integration (if used)
+│   └── walrus.ts              # Walrus IPFS integration
 └── hooks/
     ├── useUser.ts             # User data hook
     ├── useChatRooms.ts        # Chat rooms hook
     ├── useMessages.ts        # Messages hook
-    └── useEncryption.ts      # Encryption utilities hook
+    ├── useEncryption.ts      # Encryption utilities hook
+    └── useRateLimit.ts       # Rate limiting hook (20 msg/min)
 ```
 
 ### Key Components
@@ -686,8 +770,13 @@ chat-web/src/
 - Displays message content
 - Shows sender info
 - Handles decryption (if private)
-- Displays file/image previews
-- Shows tip amount
+- Displays file/image previews:
+  - Images: Show thumbnail (compressed, max 5MB original)
+  - Click thumbnail to view original image from Walrus IPFS
+  - Other files: Show download link
+- Shows tip amount (if tipped)
+- Highlights message visually if it contains a tip
+- Displays tip amount in SUI (converted from MIST)
 
 **MessageInput:**
 - Text input
@@ -715,6 +804,19 @@ create_user(
 
 // Get user by address
 get_user_by_address(address: address): Option<User>
+
+// Update user profile (name and portrait URL)
+update_user(
+  user: &mut User,
+  new_name: String,
+  new_portrait_url: String
+)
+
+// Update encryption public key (only if not in private rooms)
+update_encryption_key(
+  user: &mut User,
+  new_encryption_public_key: String
+)
 ```
 
 #### Chat Module
@@ -743,11 +845,14 @@ create_message(
 )
 
 // Create message with tip
+// Minimum tip: 0.01 SUI (10,000,000 MIST)
+// No maximum tip amount
+// Transaction fee paid by sender (first stage), sponsored (second stage)
 create_message_with_tip(
   chat_id: ID,
   text: string,
   image_url: string,
-  tip_coin: Coin<SUI>
+  tip_coin: Coin<SUI> // Minimum 0.01 SUI
 )
 
 // Ban user
@@ -755,6 +860,21 @@ ban_user(chat_id: ID, user_id: ID)
 
 // Unban user
 unban_user(chat_id: ID, user_id: ID)
+
+// Close room (host only, kicks everyone)
+close_room(chat_id: ID)
+
+// Transfer host (host only)
+transfer_host(chat_id: ID, new_host_user_id: ID)
+
+// Mute member (host only)
+mute_member(chat_id: ID, user_id: ID)
+
+// Unmute member (host only)
+unmute_member(chat_id: ID, user_id: ID)
+
+// Kick member (host only)
+kick_member(chat_id: ID, user_id: ID)
 ```
 
 #### Pass Module
@@ -787,6 +907,15 @@ getUserPasses(address: string): Pass[]
 
 // Check if user is banned
 isUserBanned(chatId: string, userId: string): boolean
+
+// Get tip ranking for a chat room
+getTipRanking(chatId: string): TipRanking[]
+
+// Query UserRegistry for all users
+getAllUsersFromRegistry(registryId: string): User[]
+
+// Query ChatRegistry for all chat rooms
+getAllChatRoomsFromRegistry(registryId: string): ChatRoom[]
 ```
 
 ### Event Listening
@@ -810,8 +939,8 @@ suiClient.subscribeEvent({
 ## Future Enhancements
 
 1. **Real-time Updates**: WebSocket/Event subscription for instant message delivery
-2. **Message Reactions**: Emoji reactions to messages
-3. **Message Editing/Deletion**: Allow message modification (with on-chain updates)
+2. **Message Reactions**: Emoji reactions to messages (stored off-chain)
+3. **Message Editing/Deletion**: Allow message modification (with on-chain updates) - Note: Current design does not support message deletion
 4. **Voice/Video**: Integration with WebRTC for voice/video calls
 5. **Notifications**: Browser notifications for new messages
 6. **Message Search**: Full-text search across messages
