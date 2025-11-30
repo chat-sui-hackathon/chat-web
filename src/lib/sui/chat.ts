@@ -135,15 +135,68 @@ export function unblockUserTransaction(
  * Parse ChatRoom object from Sui object data
  */
 export function parseChatObject(data: any): ChatRoom | null {
-    if (!data?.content || data.content.dataType !== 'moveObject') {
+    if (!data) {
+        console.warn('[parseChatObject] No data provided');
         return null;
     }
 
-    const fields = data.content.fields as any;
+    // Handle different data structures from getObject vs getOwnedObjects
+    let fields: any;
+    let objectId: string;
+
+    // Check if data has content directly (from getOwnedObjects)
+    if (data.content && data.content.dataType === 'moveObject') {
+        fields = data.content.fields;
+        objectId = data.data?.objectId || data.objectId || '';
+    }
+    // Check if data is wrapped in a data property (from getObject)
+    else if (data.data) {
+        objectId = data.data.objectId || '';
+        if (data.data.content && data.data.content.dataType === 'moveObject') {
+            fields = data.data.content.fields;
+        } else if (data.content && data.content.dataType === 'moveObject') {
+            fields = data.content.fields;
+        } else {
+            console.warn('[parseChatObject] Invalid data structure:', {
+                hasData: !!data,
+                hasDataData: !!data.data,
+                hasContent: !!data?.content,
+                hasDataContent: !!data?.data?.content,
+                contentType: data?.content?.dataType,
+                dataContentType: data?.data?.content?.dataType,
+                expectedType: 'moveObject'
+            });
+            return null;
+        }
+    }
+    // Try direct fields access
+    else if (data.fields) {
+        fields = data.fields;
+        objectId = data.objectId || '';
+    }
+    else {
+        console.warn('[parseChatObject] Invalid data structure:', {
+            hasData: !!data,
+            hasContent: !!data?.content,
+            hasDataData: !!data?.data,
+            contentType: data?.content?.dataType,
+            expectedType: 'moveObject'
+        });
+        return null;
+    }
+
+    if (!fields || !objectId) {
+        console.warn('[parseChatObject] Missing required fields:', {
+            hasFields: !!fields,
+            hasObjectId: !!objectId
+        });
+        return null;
+    }
+
     const members = fields.members || [];
 
-    return {
-        id: data.data.objectId,
+    const parsedRoom = {
+        id: objectId,
         name: fields.name || '',
         creator: fields.creator || '',
         isEncrypted: fields.is_encrypted || false,
@@ -151,6 +204,26 @@ export function parseChatObject(data: any): ChatRoom | null {
         messageCount: Number(fields.message_count || 0),
         createdAt: Number(fields.created_at || 0),
     };
+
+    console.log('[parseChatObject] Parsed chat room:', {
+        objectId: data.data.objectId,
+        name: parsedRoom.name,
+        creator: parsedRoom.creator,
+        isEncrypted: parsedRoom.isEncrypted,
+        membersCount: parsedRoom.members.length,
+        messageCount: parsedRoom.messageCount,
+        createdAt: parsedRoom.createdAt,
+        rawFields: {
+            name: fields.name,
+            creator: fields.creator,
+            is_encrypted: fields.is_encrypted,
+            members: Array.isArray(members) ? `${members.length} members` : 'not an array',
+            message_count: fields.message_count,
+            created_at: fields.created_at
+        }
+    });
+
+    return parsedRoom;
 }
 
 /**

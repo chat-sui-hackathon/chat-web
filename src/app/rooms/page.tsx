@@ -44,12 +44,7 @@ export default function RoomsPage() {
     }
   }, [account, isRegistered, router])
 
-  // Don't render content if redirecting
-  if (account && !isRegistered) {
-    return null
-  }
-
-  // Filter and sort rooms
+  // Filter and sort rooms (must be called before any early returns)
   const filteredAndSortedRooms = useMemo(() => {
     let filtered = rooms
 
@@ -84,6 +79,11 @@ export default function RoomsPage() {
 
     return sorted
   }, [rooms, filter, searchQuery, sortBy])
+
+  // Don't render content if redirecting (after all hooks)
+  if (account && !isRegistered) {
+    return null
+  }
 
   if (!account) {
     return (

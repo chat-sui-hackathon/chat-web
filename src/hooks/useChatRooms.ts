@@ -40,6 +40,13 @@ export function useChatRooms(chatIndexId: string | null) {
         ? (chatIndexData.data.content.fields as any)?.chat_ids || []
         : [];
 
+    console.log('[useChatRooms] Chat index loaded:', {
+        chatIndexId,
+        hasData: !!chatIndexData,
+        chatRoomIdsCount: chatRoomIds.length,
+        chatRoomIds: chatRoomIds.length > 0 ? chatRoomIds : 'none'
+    });
+
     // Fetch all chat room objects
     const {
         data: roomsData,
@@ -49,7 +56,15 @@ export function useChatRooms(chatIndexId: string | null) {
     } = useQuery({
         queryKey: ['chatRooms', chatRoomIds],
         queryFn: async () => {
-            if (chatRoomIds.length === 0) return [];
+            if (chatRoomIds.length === 0) {
+                console.log('[useChatRooms] No chat room IDs to fetch');
+                return [];
+            }
+
+            console.log('[useChatRooms] Fetching chat rooms:', {
+                count: chatRoomIds.length,
+                ids: chatRoomIds
+            });
 
             // Fetch all chat room objects in parallel
             const roomPromises = chatRoomIds.map((id: string) =>
@@ -62,7 +77,16 @@ export function useChatRooms(chatIndexId: string | null) {
                 })
             );
 
-            return await Promise.all(roomPromises);
+            const results = await Promise.all(roomPromises);
+
+            console.log('[useChatRooms] Fetched chat room objects:', {
+                requested: chatRoomIds.length,
+                received: results.length,
+                successful: results.filter(r => r.data).length,
+                failed: results.filter(r => r.error).length
+            });
+
+            return results;
         },
         enabled: chatRoomIds.length > 0,
     });
@@ -73,15 +97,34 @@ export function useChatRooms(chatIndexId: string | null) {
             .filter(Boolean) as ChatRoom[]
         : [];
 
+    console.log('[useChatRooms] Parsed chat rooms:', {
+        rawDataCount: roomsData?.length || 0,
+        parsedCount: rooms.length,
+        rooms: rooms.length > 0 ? rooms.map(r => ({ id: r.id, name: r.name })) : 'none'
+    });
+
     const refetch = async () => {
+        console.log('[useChatRooms] Refetching chat rooms...');
         await refetchIndex();
         await refetchRooms();
+        console.log('[useChatRooms] Refetch complete');
     };
+
+    const error = indexError || roomsError;
+
+    if (error) {
+        console.error('[useChatRooms] Error loading chat rooms:', {
+            indexError: indexError?.message,
+            roomsError: roomsError?.message,
+            chatIndexId,
+            chatRoomIdsCount: chatRoomIds.length
+        });
+    }
 
     return {
         rooms,
         isLoading: isLoadingIndex || isLoadingRooms,
-        error: indexError || roomsError,
+        error,
         refetch,
     };
 }

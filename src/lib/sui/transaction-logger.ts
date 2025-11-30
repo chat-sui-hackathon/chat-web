@@ -51,8 +51,8 @@ export function logTransactionSuccess(
   console.log('Timestamp:', new Date().toISOString())
 
   // Handle different response types
-  const effects = typeof result.effects === 'string' 
-    ? null 
+  const effects = typeof result.effects === 'string'
+    ? null
     : result.effects
 
   console.log('Transaction Status:', effects?.status)
