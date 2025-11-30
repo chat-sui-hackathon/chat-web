@@ -77,6 +77,29 @@ export function useUserByAddress(address: string | null) {
 }
 
 /**
+ * Hook to get parsed user profile by address
+ */
+export function useProfileByAddress(address: string | null) {
+    const { data: profileObject, isLoading, error } = useUserByAddress(address);
+
+    // Check if profile exists
+    const hasProfileData = !!(profileObject?.data && profileObject.data.length > 0);
+    const firstProfileData = profileObject?.data?.[0];
+
+    // Try to parse the profile
+    const profile: Profile | null = firstProfileData
+        ? parseProfileObject(firstProfileData)
+        : null;
+
+    return {
+        profile,
+        isLoading,
+        error,
+        exists: hasProfileData || !!profile,
+    };
+}
+
+/**
  * Hook to get user's UserChatIndex
  */
 export function useUserChatIndex(chatIndexId: string | null) {

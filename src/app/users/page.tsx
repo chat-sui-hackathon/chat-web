@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/select'
 import { Loader2, Search, User, Calendar, Hash } from 'lucide-react'
 import Image from 'next/image'
+import Link from 'next/link'
 import type { Profile } from '@/lib/types'
 
 type SortOption = 'newest' | 'oldest' | 'name'
@@ -157,7 +158,8 @@ function ProfileCard({ profile }: { profile: Profile }) {
     : null
 
   return (
-    <Card className="h-full transition-all hover:shadow-md hover:border-primary/50">
+    <Link href={`/users/${profile.owner}`}>
+      <Card className="h-full transition-all hover:shadow-md hover:border-primary/50 cursor-pointer">
       <CardHeader>
         <div className="flex items-start gap-4">
           <div className="relative w-16 h-16 rounded-full overflow-hidden bg-muted flex-shrink-0">
@@ -206,6 +208,7 @@ function ProfileCard({ profile }: { profile: Profile }) {
         </div>
       </CardContent>
     </Card>
+    </Link>
   )
 }
 
