@@ -35,9 +35,12 @@ export function Header() {
                 >
                   Users
                 </Link>
-                <div className="text-sm text-zinc-600 dark:text-zinc-400">
+                <Link
+                  href={`/users/${account.address}`}
+                  className="text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-zinc-50 transition-colors"
+                >
                   {profile.displayName}
-                </div>
+                </Link>
               </>
             )}
             <ConnectButton />

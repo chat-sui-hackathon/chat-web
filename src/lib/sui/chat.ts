@@ -193,31 +193,41 @@ export function parseChatObject(data: any): ChatRoom | null {
         return null;
     }
 
-    const members = fields.members || [];
+    // Parse members from VecSet<address> - Sui serializes VecSet as an array
+    // Always use members.length to get the count, not a separate field
+    let members: string[] = [];
+    if (fields.members) {
+        if (Array.isArray(fields.members)) {
+            members = fields.members;
+        } else if (fields.members.contents && Array.isArray(fields.members.contents)) {
+            // Handle VecSet structure if it has a contents field
+            members = fields.members.contents;
+        }
+    }
 
     const parsedRoom = {
         id: objectId,
         name: fields.name || '',
         creator: fields.creator || '',
         isEncrypted: fields.is_encrypted || false,
-        members: Array.isArray(members) ? members : [],
+        members: members, // Use members.length for member count
         messageCount: Number(fields.message_count || 0),
         createdAt: Number(fields.created_at || 0),
     };
 
     console.log('[parseChatObject] Parsed chat room:', {
-        objectId: data.data.objectId,
+        objectId: data.data?.objectId || objectId,
         name: parsedRoom.name,
         creator: parsedRoom.creator,
         isEncrypted: parsedRoom.isEncrypted,
-        membersCount: parsedRoom.members.length,
+        memberCount: parsedRoom.members.length, // Always use members.length
         messageCount: parsedRoom.messageCount,
         createdAt: parsedRoom.createdAt,
         rawFields: {
             name: fields.name,
             creator: fields.creator,
             is_encrypted: fields.is_encrypted,
-            members: Array.isArray(members) ? `${members.length} members` : 'not an array',
+            members: Array.isArray(fields.members) ? `${fields.members.length} members` : typeof fields.members,
             message_count: fields.message_count,
             created_at: fields.created_at
         }
