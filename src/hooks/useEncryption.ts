@@ -101,3 +101,41 @@ export function useRoomKey() {
   };
 }
 
+/**
+ * Hook to prepare invitation for encrypted chat room
+ * This handles the full flow of preparing encrypted key for invitee
+ */
+export function useInviteToEncryptedChat() {
+  const prepareInvite = useCallback(async (
+    client: any,
+    chatId: string,
+    inviterAddress: string,
+    inviterKeypair: Keypair,
+    inviteePublicKey: Uint8Array | string | number[]
+  ): Promise<Uint8Array | null> => {
+    await initCrypto();
+
+    // Parse invitee's public key using the utility function
+    const { parsePublicKey } = await import('@/lib/sui/invite');
+    const inviteePublicKeyBytes = parsePublicKey(inviteePublicKey);
+
+    if (!inviteePublicKeyBytes || inviteePublicKeyBytes.length !== 32) {
+      console.error('[useInviteToEncryptedChat] Invalid invitee public key');
+      return null;
+    }
+
+    // Import the prepareEncryptedKeyForInvite function
+    const { prepareEncryptedKeyForInvite } = await import('@/lib/sui/invite');
+
+    return prepareEncryptedKeyForInvite(
+      client,
+      chatId,
+      inviterAddress,
+      inviterKeypair.secretKey,
+      inviteePublicKeyBytes
+    );
+  }, []);
+
+  return { prepareInvite };
+}
+

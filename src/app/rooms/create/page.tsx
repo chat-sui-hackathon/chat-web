@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import { Header } from '@/components/common/Header'
 import { createChatTransaction } from '@/lib/sui/chat'
 import { useUser } from '@/hooks/useUser'
-import { useRoomKey } from '@/hooks/useEncryption'
+import { createRandomSymmetricKey, encryptWithPublicKey, initCrypto, fromBase64 } from '@/lib/crypto'
 import { createTransactionLogger } from '@/lib/sui/transaction-logger'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,7 +21,6 @@ export default function CreateRoomPage() {
     const account = useCurrentAccount()
     const { profile, isLoading: isLoadingProfile, isRegistered } = useUser()
     const { mutate: signAndExecuteTransaction, isPending } = useSignAndExecuteTransaction()
-    const { createRoomKey } = useRoomKey()
     const client = useSuiClient()
 
     const [roomName, setRoomName] = useState('')
@@ -54,17 +53,62 @@ export default function CreateRoomPage() {
         setIsCreating(true)
 
         try {
+            // Initialize crypto library
+            await initCrypto()
+
             const tx = new Transaction()
 
-            // For encrypted rooms, generate a room key
+            // For encrypted rooms, generate a symmetric key and encrypt it with user's public key
             // For public rooms, use empty array
             let encryptedKey: Uint8Array | string = new Uint8Array(0)
 
             if (isEncrypted) {
+                if (!profile?.publicKey) {
+                    toast.error('Public key not found in profile. Please update your profile.')
+                    setIsCreating(false)
+                    return
+                }
+
                 // Generate a random symmetric key for the room
-                encryptedKey = createRoomKey()
-                // Note: In a real implementation, you would encrypt this key
-                // with each member's public key when inviting them
+                const symmetricKey = createRandomSymmetricKey()
+
+                // Convert profile public key to Uint8Array
+                // The public key from Sui is stored as vector<u8> which may come as array of numbers
+                let publicKey: Uint8Array
+                if (typeof profile.publicKey === 'string') {
+                    // If it's a string, try to decode it
+                    // Could be base64 or hex encoded
+                    try {
+                        // Try base64 first using crypto utility
+                        publicKey = fromBase64(profile.publicKey)
+                    } catch {
+                        try {
+                            // Try hex
+                            publicKey = new Uint8Array(
+                                profile.publicKey.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []
+                            )
+                        } catch {
+                            // Fallback: treat as raw string
+                            publicKey = new TextEncoder().encode(profile.publicKey)
+                        }
+                    }
+                } else if (Array.isArray(profile.publicKey)) {
+                    // If it's an array of numbers, convert to Uint8Array
+                    publicKey = new Uint8Array(profile.publicKey)
+                } else {
+                    // Already Uint8Array
+                    publicKey = profile.publicKey
+                }
+
+                // Validate public key length (X25519 public keys are 32 bytes)
+                if (publicKey.length !== 32) {
+                    toast.error(`Invalid public key length: ${publicKey.length} bytes. Expected 32 bytes.`)
+                    setIsCreating(false)
+                    return
+                }
+
+                // Encrypt the symmetric key with the user's public key
+                encryptedKey = encryptWithPublicKey(symmetricKey, publicKey)
             }
 
             const txParams = {
@@ -107,25 +151,25 @@ export default function CreateRoomPage() {
                             // Check shared objects (ChatRoom is shared)
                             if (txResponse.effects && typeof txResponse.effects !== 'string') {
                                 if (txResponse.effects.sharedObjects && txResponse.effects.sharedObjects.length > 0) {
-                                // Find the ChatRoom object (should be the one we just created)
+                                    // Find the ChatRoom object (should be the one we just created)
                                     const chatRoom = txResponse.effects.sharedObjects.find(
-                                    (obj: any) => obj.objectType?.includes('ChatRoom') || obj.objectType?.includes('chat::ChatRoom')
-                                )
-                                if (chatRoom) {
-                                    chatRoomId = chatRoom.objectId
-                                } else {
-                                    // If no type match, use the first shared object
+                                        (obj: any) => obj.objectType?.includes('ChatRoom') || obj.objectType?.includes('chat::ChatRoom')
+                                    )
+                                    if (chatRoom) {
+                                        chatRoomId = chatRoom.objectId
+                                    } else {
+                                        // If no type match, use the first shared object
                                         chatRoomId = txResponse.effects.sharedObjects[0]?.objectId
+                                    }
+                                }
+
+                                // Fallback: Check created objects
+                                if (!chatRoomId && txResponse.effects.created && txResponse.effects.created.length > 0) {
+                                    chatRoomId = txResponse.effects.created[0]?.reference?.objectId
                                 }
                             }
 
-                            // Fallback: Check created objects
-                                if (!chatRoomId && txResponse.effects.created && txResponse.effects.created.length > 0) {
-                                    chatRoomId = txResponse.effects.created[0]?.reference?.objectId
-                            }
-                        }
-
-                        // Check object changes as fallback
+                            // Check object changes as fallback
                             if (!chatRoomId && txResponse.objectChanges) {
                                 const createdChange = txResponse.objectChanges.find(
                                     (change: any) => change.type === 'created'
@@ -258,8 +302,8 @@ export default function CreateRoomPage() {
                                         onClick={() => setIsEncrypted(false)}
                                         disabled={isLoading}
                                         className={`p-4 border-2 rounded-lg transition-all ${!isEncrypted
-                                                ? 'border-primary bg-primary/5'
-                                                : 'border-border hover:border-primary/50'
+                                            ? 'border-primary bg-primary/5'
+                                            : 'border-border hover:border-primary/50'
                                             }`}
                                     >
                                         <div className="flex items-center gap-2 mb-2">
@@ -276,8 +320,8 @@ export default function CreateRoomPage() {
                                         onClick={() => setIsEncrypted(true)}
                                         disabled={isLoading}
                                         className={`p-4 border-2 rounded-lg transition-all ${isEncrypted
-                                                ? 'border-primary bg-primary/5'
-                                                : 'border-border hover:border-primary/50'
+                                            ? 'border-primary bg-primary/5'
+                                            : 'border-border hover:border-primary/50'
                                             }`}
                                     >
                                         <div className="flex items-center gap-2 mb-2">
