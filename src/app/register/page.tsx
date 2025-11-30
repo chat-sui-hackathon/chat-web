@@ -138,14 +138,14 @@ export default function RegisterPage() {
   // Show loading or redirect if already registered
   if (!account) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen relative">
         <Header />
         <main className="max-w-2xl mx-auto px-4 py-16">
           <Card>
             <CardHeader>
               <CardTitle>Registration Required</CardTitle>
               <CardDescription>
-                Please connect your wallet to register for Sui Chat.
+                Please connect your wallet to register for Iceb3rg.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -157,7 +157,7 @@ export default function RegisterPage() {
   // Show loading while checking profile or redirecting
   if (isLoadingProfile || (account && isRegistered)) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen relative">
         <Header />
         <main className="max-w-2xl mx-auto px-4 py-16">
           <Card>
